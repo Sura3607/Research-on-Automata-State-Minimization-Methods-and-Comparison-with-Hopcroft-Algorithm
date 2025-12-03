@@ -18,18 +18,12 @@ DFA-Minimization-Research/
 │   │         
 │   └── generate_dfa
 │
-├── tests/                   
-│   ├── test_case_01.json
-│   ├── expected_01.json
-│   └── large_dfa_1000.json
-│
 ├── experiments/             
 │   ├── raw_data/            
 │   │   ├── benchmark_table_filling.csv
 │   │   ├── benchmark_moore.csv
 │   │   └── benchmark_hopcroft.csv
-│   ├── plots/               
-│   │   ├── time_comparison.png
-│   │   └── memory_usage.png
-│   └── analysis_script.py   # Script Python để vẽ biểu đồ từ CSV
+│   ├── test               
+│   │   ├── test_case.py
+│   └── evaluation.py   # Script Python để vẽ biểu đồ từ CSV
 ```
