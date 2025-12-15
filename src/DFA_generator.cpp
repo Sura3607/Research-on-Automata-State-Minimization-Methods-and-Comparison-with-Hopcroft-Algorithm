@@ -150,7 +150,7 @@ int main() {
     std::cout << "-> Da luu: minimal_dfa.json" << std::endl;
 
     // 2. Split into nonminimal DFA
-    std::vector<int> targets = {100, 1000, 5000};
+    std::vector<int> targets = {1000, 10000, 50000};
     
     std::ofstream exp_file("expanded_dfas.json");
     exp_file << "{\n  \"expanded_dfas\": [\n";
