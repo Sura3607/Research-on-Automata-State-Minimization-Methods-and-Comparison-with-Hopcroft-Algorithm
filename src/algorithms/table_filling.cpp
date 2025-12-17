@@ -12,6 +12,10 @@
 #include <algorithm>
 #include <queue>
 #include <iomanip>
+#include <chrono>
+#include <sstream>
+#include <windows.h>
+#include <psapi.h>
 #include "json.hpp" 
 
 using json = nlohmann::json;
@@ -259,16 +263,131 @@ public:
 };
 
 // === PHẦN 3: HÀM MAIN ===
+
+// Hàm lấy memory usage (Windows)
+size_t getCurrentMemoryUsage() {
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+        return pmc.WorkingSetSize / 1024; // Convert to KB
+    }
+    return 0;
+}
+
+size_t getPeakMemoryUsage() {
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+        return pmc.PeakWorkingSetSize / 1024; // Convert to KB
+    }
+    return 0;
+}
+
+// Hàm lấy CPU usage (Windows)
+double getCPUUsage() {
+    static ULARGE_INTEGER lastCPU, lastSysCPU, lastUserCPU;
+    static int numProcessors;
+    static HANDLE self;
+    static bool initialized = false;
+
+    if (!initialized) {
+        SYSTEM_INFO sysInfo;
+        FILETIME ftime, fsys, fuser;
+        GetSystemInfo(&sysInfo);
+        numProcessors = sysInfo.dwNumberOfProcessors;
+        GetSystemTimeAsFileTime(&ftime);
+        memcpy(&lastCPU, &ftime, sizeof(FILETIME));
+        self = GetCurrentProcess();
+        GetProcessTimes(self, &ftime, &ftime, &fsys, &fuser);
+        memcpy(&lastSysCPU, &fsys, sizeof(FILETIME));
+        memcpy(&lastUserCPU, &fuser, sizeof(FILETIME));
+        initialized = true;
+        return 0.0;
+    }
+
+    FILETIME ftime, fsys, fuser;
+    ULARGE_INTEGER now, sys, user;
+    double percent;
+
+    GetSystemTimeAsFileTime(&ftime);
+    memcpy(&now, &ftime, sizeof(FILETIME));
+    GetProcessTimes(self, &ftime, &ftime, &fsys, &fuser);
+    memcpy(&sys, &fsys, sizeof(FILETIME));
+    memcpy(&user, &fuser, sizeof(FILETIME));
+    
+    percent = (sys.QuadPart - lastSysCPU.QuadPart) + (user.QuadPart - lastUserCPU.QuadPart);
+    percent /= (now.QuadPart - lastCPU.QuadPart);
+    percent /= numProcessors;
+    
+    lastCPU = now;
+    lastUserCPU = user;
+    lastSysCPU = sys;
+
+    return percent * 100.0;
+}
+
+// Hàm trích xuất test case label từ filename
+string extractTestCaseLabel(const string& filename) {
+    // Extract from filename like "1000_states_dfa.json" -> "1000"
+    size_t pos = filename.find_last_of("/\\");
+    string basename = (pos == string::npos) ? filename : filename.substr(pos + 1);
+    
+    // Try to extract number at the beginning
+    size_t underscore = basename.find('_');
+    if (underscore != string::npos) {
+        return basename.substr(0, underscore);
+    }
+    
+    // If no underscore, return basename without extension
+    size_t dot = basename.find_last_of('.');
+    return (dot == string::npos) ? basename : basename.substr(0, dot);
+}
+
 int main(int argc, char* argv[]) {
-    string inputFile = (argc > 1) ? argv[1] : "input.json";
+    string inputFile = (argc > 1) ? argv[1] : "50000_states_dfa.json";
     string outputFile = (argc > 2) ? argv[2] : "output.json";
 
     try {
+        // Initialize CPU monitoring
+        getCPUUsage();
+        
+        // Load DFA
         DFA myDFA = loadDFA_JSON(inputFile);
+        int initialStates = myDFA.states.size();
+        
+        // Extract test case label
+        string testCaseLabel = extractTestCaseLabel(inputFile);
+        
+        // Start timing and memory measurement
+        auto start = chrono::high_resolution_clock::now();
+        size_t memBefore = getCurrentMemoryUsage();
+        
+        // Run minimization
         Solver solver;
         DFA minDFA = solver.minimize(myDFA);
+        
+        // End timing and memory measurement
+        auto end = chrono::high_resolution_clock::now();
+        size_t memAfter = getCurrentMemoryUsage();
+        size_t peakMem = getPeakMemoryUsage();
+        double cpuUsage = getCPUUsage();
+        
+        // Calculate metrics
+        auto duration = chrono::duration_cast<chrono::microseconds>(end - start);
+        double wallTimeMs = duration.count() / 1000.0;
+        int finalStates = minDFA.states.size();
+        size_t memoryUsage = memAfter;
+        
+        // Export result
         exportDFA_JSON(minDFA, outputFile);
-        cout << "SUCCESS" << endl;
+        
+        // Display metrics in required format
+        cout << "Test_Case_Label: " << testCaseLabel << endl;
+        cout << "Initial_States: " << initialStates << endl;
+        cout << "Final_States: " << finalStates << endl;
+        cout << "Wall_Time_ms: " << fixed << setprecision(3) << wallTimeMs << endl;
+        cout << "CPU_Usage_Percent: " << fixed << setprecision(2) << cpuUsage << endl;
+        cout << "Memory_Usage_KB: " << memoryUsage << endl;
+        cout << "Peak_Memory_KB: " << peakMem << endl;
+        
     } catch (const exception& e) {
         cerr << "ERROR: " << e.what() << endl;
         return 1;
